@@ -272,6 +272,35 @@ jobs:
           EOF
           echo "Created placeholder Config.xcconfig for build check"
 
+      # Run on the iOS Simulator rather than with `swift test`: MetricKit compiles out on a macOS
+      # host, so only the simulator run covers the package as shipped (see the package README).
+      - name: Test Grafana OpenTelemetry iOS (iOS Simulator)
+        working-directory: Mobiles/ios/grafana-opentelemetry-ios
+        run: |
+          set -e
+          # Pick the newest available iPhone runtime/device on the runner.
+          IFS=$'\t' read -r DEVICE_UDID DEVICE_NAME < <(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime in sorted(data.get("devices", {}).keys(), reverse=True):
+              for d in data["devices"][runtime]:
+                  if d.get("isAvailable") and "iPhone" in d.get("name", ""):
+                      print(d["udid"], d["name"], sep="\t")
+                      sys.exit(0)
+          sys.exit(1)
+          ')
+          if [ -z "$DEVICE_UDID" ]; then
+            echo "No available iPhone simulator on this runner image"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Testing on simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          xcodebuild test \
+            -scheme grafana-opentelemetry-ios \
+            -destination "platform=iOS Simulator,id=$DEVICE_UDID" \
+            -derivedDataPath .build/xcodebuild-dd \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Build iOS .app for Simulator
         working-directory: Mobiles/ios
         run: |
